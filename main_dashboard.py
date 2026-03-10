@@ -228,8 +228,8 @@ def open_about_window():
     details = (
          "Developer:         Uwagboi Andrew Chukwuyem\n"
          "Matric No:          2203030127\n"
-         "Department:      Computer Science\n"
-         "Year:                   2026"
+         "Department:       Computer Science\n"
+         "Year:                 2026"
     )
     details_label = ctk.CTkLabel(about, text=details, font=("Arial", 16), justify="left", anchor="w")
     details_label.pack(fill="x", padx=40, pady=5)
