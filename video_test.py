@@ -2,279 +2,230 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 import cv2
 import easyocr
-import pandas as pd
 from ultralytics import YOLO
 from datetime import datetime
 import os
 import re
-from openpyxl import load_workbook
+import difflib
+from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
 # --- 1. CONFIGURATION ---
+VIDEO_PATH = "videoStreamTest.mp4" 
 LOG_FILE = "video_log.xlsx"
-VIDEO_PATH = "video_feed_car_test.mp4" # Ensure this file is in your AVLPRDL folder
+DEVICE = 'cpu'
+COOLDOWN_SECONDS = 300  
 
-# --- NIGERIAN STATE MAP ---
-NIGERIA_STATES = {
-    "ABJ": "Abuja (FCT)", "FCT": "Abuja (FCT)", "ABIA": "Umuahia", "ADAMAWA": "Yola", 
-    "AKWA IBOM": "Uyo", "ANAMBRA": "Awka", "ANA": "Awka", "BAUCHI": "Bauchi", 
-    "BAYELSA": "Yenagoa", "BENUE": "Makurdi", "BEN": "Makurdi", "BORNO": "Maiduguri", 
-    "CROSS RIVER": "Calabar", "DELTA": "Asaba", "DEL": "Asaba", "EBONYI": "Abakaliki", 
-    "EDO": "Benin City", "EKITI": "Ado-Ekiti", "ENUGU": "Enugu", "ENU": "Enugu", 
-    "GOMBE": "Gombe", "IMO": "Owerri", "JIGAWA": "Dutse", "KADUNA": "Kaduna", 
-    "KAD": "Kaduna", "KANO": "Kano", "KAN": "Kano", "KATSINA": "Katsina", 
-    "KEBBI": "Birnin Kebbi", "KOGI": "Lokoja", "KWARA": "Ilorin", "LAGOS": "Ikeja", 
-    "LAG": "Ikeja", "NASARAWA": "Lafia", "NIGER": "Minna", "OGUN": "Abeokuta", 
-    "OGU": "Abeokuta", "ONDO": "Akure", "OND": "Akure", "OSUN": "Osogbo", 
-    "OYO": "Ibadan", "PLATEAU": "Jos", "RIVERS": "Port Harcourt", 
-    "PHC": "Port Harcourt", "SOKOTO": "Sokoto", "TARABA": "Jalingo", 
-    "YOBE": "Damaturu", "ZAMFARA": "Gusau"
-}
-
-LGA_MAP = {
-    # --- LAGOS STATE ---
-    "AAA": "Lagos", "AKD": "Lagos", "AGL": "Lagos", "APP": "Lagos", 
-    "BDG": "Lagos", "EKY": "Lagos", "EPE": "Lagos", "FKJ": "Lagos", 
-    "FST": "Lagos", "GGE": "Lagos", "JJJ": "Lagos", "KJA": "Lagos", 
-    "KRD": "Lagos", "KSF": "Lagos", "KTU": "Lagos", "LND": "Lagos", 
-    "LSD": "Lagos", "LSR": "Lagos", "MUS": "Lagos", "SMK": "Lagos",
-    
-    # --- ABUJA (FCT) ---
-    "ABC": "Abuja", "ABJ": "Abuja", "BWR": "Abuja", "GWA": "Abuja", 
-    "KUJ": "Abuja", "KWL": "Abuja", "RBC": "Abuja", "RSH": "Abuja", 
-    "YAB": "Abuja",
-    
-    # --- KANO STATE ---
-    "KAN": "Kano",  "KMC": "Kano",  "BCH": "Kano",  "BGW": "Kano", 
-    "BKN": "Kano",  "DBT": "Kano",  "GWA": "Kano",  "BBJ": "Kano",
-    "WUD": "Kano",  "TUD": "Kano",  "RNO": "Kano",  "MDB": "Kano",
-    
-    # --- RIVERS STATE ---
-    "PHC": "Rivers", "AHO": "Rivers", "BGM": "Rivers", "BNY": "Rivers", 
-    "DEG": "Rivers", "ELE": "Rivers", "KNM": "Rivers", "OBK": "Rivers",
-    "RUM": "Rivers", "NCH": "Rivers",
-    
-    # --- KADUNA STATE ---
-    "KAD": "Kaduna", "DKA": "Kaduna", "MKA": "Kaduna", "ZAR": "Kaduna", 
-    "TRN": "Kaduna", "KAF": "Kaduna", "KCH": "Kaduna", "MGN": "Kaduna",
-    "SAB": "Kaduna", "ZKW": "Kaduna",
-    
-    # --- OYO STATE ---
-    "IBA": "Oyo", "IBZ": "Oyo", "NRK": "Oyo", "YEM": "Oyo", "MAP": "Oyo",
-    "BDJ": "Oyo", "AGD": "Oyo", "LUY": "Oyo", "AYE": "Oyo", "GNN": "Oyo",
-    
-    # --- OGUN STATE ---
-    "ABG": "Ogun", "AAB": "Ogun", "AKM": "Ogun", "SGM": "Ogun", "JBD": "Ogun",
-    "KJA": "Ogun", "TTN": "Ogun", "WDE": "Ogun", "TRE": "Ogun", "SMG": "Ogun",
-
-    # 1. ABIA
-    "ABA": "Abia", "BND": "Abia", "ACH": "Abia", "HAF": "Abia", "UMA": "Abia", "KPU": "Abia",
-    # 2. ADAMAWA
-    "DSA": "Adamawa", "FUR": "Adamawa", "GAN": "Adamawa", "GRE": "Adamawa", "GMB": "Adamawa", "GUY": "Adamawa", "HNG": "Adamawa", "JMT": "Adamawa", "MUB": "Adamawa", "NUM": "Adamawa", "YLA": "Adamawa",
-    # 3. AKWA IBOM
-    "ABK": "Akwa Ibom", "KRT": "Akwa Ibom", "KET": "Akwa Ibom", "KST": "Akwa Ibom", "AFH": "Akwa Ibom", "AEE": "Akwa Ibom", "ETN": "Akwa Ibom", "UYO": "Akwa Ibom",
-    # 4. ANAMBRA
-    "AGU": "Anambra", "ABN": "Anambra", "ACA": "Anambra", "AJL": "Anambra", "HAL": "Anambra", "HTE": "Anambra", "AWK": "Anambra", "NNE": "Anambra", "ONN": "Anambra",
-    # 5. BAUCHI
-    "BAU": "Bauchi", "BLR": "Bauchi", "BTA": "Bauchi", "DAS": "Bauchi", "DKU": "Bauchi", "DRZ": "Bauchi", "AKK": "Bauchi", "KAT": "Bauchi",
-    # 6. BAYELSA
-    "YEN": "Bayelsa", "KMR": "Bayelsa", "KMK": "Bayelsa", "NEM": "Bayelsa", "GBB": "Bayelsa", "SAG": "Bayelsa", "SPR": "Bayelsa",
-    # 7. BENUE
-    "BEN": "Benue", "PKG": "Benue", "GBK": "Benue", "MKD": "Benue", "OTU": "Benue",
-    # 8. BORNO
-    "BAM": "Borno", "BBU": "Borno", "DAM": "Borno", "DKW": "Borno", "HWL": "Borno", "MAI": "Borno", "MUG": "Borno",
-    # 9. CROSS RIVER
-    "DUK": "Cross River", "CAL": "Cross River", "IKM": "Cross River", "OBU": "Cross River", "UGE": "Cross River",
-    # 10. DELTA
-    "ABH": "Delta", "AGB": "Delta", "BMA": "Delta", "BUR": "Delta", "DET": "Delta", "DNB": "Delta", "DSZ": "Delta", "ASB": "Delta", "WAR": "Delta", "UGH": "Delta", "SLG": "Delta",
-    # 11. EBONYI
-    "HKW": "Ebonyi", "ABK": "Ebonyi", "AFK": "Ebonyi", "EZA": "Ebonyi", "OHZ": "Ebonyi",
-    # 12. EDO
-    "ABD": "Edo", "AFZ": "Edo", "AGD": "Edo", "BEN": "Edo", "AUB": "Edo", "IGU": "Edo", "UBJ": "Edo", "UCH": "Edo", "OKP": "Edo",
-    # 13. EKITI
-    "ADK": "Ekiti", "EFY": "Ekiti", "EAA": "Ekiti", "GED": "Ekiti", "IER": "Ekiti", "KRE": "Ekiti", "MUE": "Ekiti", "TUN": "Ekiti", "YEK": "Ekiti",
-    # 14. ENUGU
-    "AGN": "Enugu", "AGW": "Enugu", "BBG": "Enugu", "ENU": "Enugu", "AWD": "Enugu", "UDI": "Enugu", "NSK": "Enugu",
-    # 15. FCT - ABUJA
-    "ABC": "Abuja", "ABJ": "Abuja", "BWR": "Abuja", "GWA": "Abuja", "KUJ": "Abuja", "KWL": "Abuja", "RBC": "Abuja", "RSH": "Abuja", "YAB": "Abuja",
-    # 16. GOMBE
-    "GME": "Gombe", "BKK": "Gombe", "KMG": "Gombe", "NFD": "Gombe", "DKU": "Gombe", "DBS": "Gombe",
-    # 17. IMO
-    "WER": "Imo", "ORL": "Imo", "OKI": "Imo", "MGB": "Imo", "KGE": "Imo", "NKR": "Imo", "TTK": "Imo", "UMD": "Imo",
-    # 18. JIGAWA
-    "BBR": "Jigawa", "BMW": "Jigawa", "DTU": "Jigawa", "HJA": "Jigawa", "KZR": "Jigawa", "GML": "Jigawa", "RNG": "Jigawa",
-    # 19. KADUNA
-    "KAD": "Kaduna", "DKA": "Kaduna", "MKA": "Kaduna", "ZAR": "Kaduna", "TRN": "Kaduna", "BNG": "Kaduna", "KAF": "Kaduna", "KCH": "Kaduna", "MGN": "Kaduna", "SAB": "Kaduna", "ZKW": "Kaduna",
-    # 20. KANO
-    "KAN": "Kano", "KMC": "Kano", "GWA": "Kano", "BKN": "Kano", "DBT": "Kano", "ABS": "Kano", "AJG": "Kano", "BBJ": "Kano", "BCH": "Kano", "DAL": "Kano", "DGW": "Kano", "DKD": "Kano", "DTA": "Kano", "DTF": "Kano", "WUD": "Kano",
-    # 21. KATSINA
-    "BAT": "Katsina", "BKR": "Katsina", "BDU": "Katsina", "BKY": "Katsina", "DRA": "Katsina", "DSM": "Katsina", "DNJ": "Katsina", "KTN": "Katsina", "FNT": "Katsina",
-    # 22. KEBBI
-    "BES": "Kebbi", "BGD": "Kebbi", "DKG": "Kebbi", "BRK": "Kebbi", "ARG": "Kebbi", "YUR": "Kebbi", "JEG": "Kebbi",
-    # 23. KOGI
-    "BAS": "Kogi", "DAH": "Kogi", "DKN": "Kogi", "LKJ": "Kogi", "KBA": "Kogi", "ANC": "Kogi", "OKN": "Kogi", "AJK": "Kogi",
-    # 24. KWARA
-    "AFN": "Kwara", "BDU": "Kwara", "ILR": "Kwara", "MUN": "Kwara", "OFF": "Kwara", "KEY": "Kwara", "LFM": "Kwara",
-    # 25. LAGOS
-    "AAA": "Lagos", "AKD": "Lagos", "AGL": "Lagos", "APP": "Lagos", "BDG": "Lagos", "EKY": "Lagos", "EPE": "Lagos", "FKJ": "Lagos", "FST": "Lagos", "GGE": "Lagos", "JJJ": "Lagos", "KJA": "Lagos", "KRD": "Lagos", "KSF": "Lagos", "KTU": "Lagos", "LND": "Lagos", "LSD": "Lagos", "LSR": "Lagos", "MUS": "Lagos", "SMK": "Lagos",
-    # 26. NASARAWA
-    "LFA": "Nasarawa", "KFF": "Nasarawa", "AKW": "Nasarawa", "NSK": "Nasarawa", "GWA": "Nasarawa", "WAM": "Nasarawa", "KEG": "Nasarawa",
-    # 27. NIGER
-    "AGA": "Niger", "AGR": "Niger", "BDA": "Niger", "BKY": "Niger", "PAK": "Niger", "MNA": "Niger", "SUL": "Niger", "KNT": "Niger", "LAP": "Niger", "NAG": "Niger",
-    # 28. OGUN
-    "AAB": "Ogun", "ABG": "Ogun", "DED": "Ogun", "DGB": "Ogun", "AKM": "Ogun", "SGM": "Ogun", "JBD": "Ogun", "KJA": "Ogun", "TTN": "Ogun", "WDE": "Ogun", "TRE": "Ogun", "SMG": "Ogun",
-    # 29. ONDO
-    "DEK": "Ondo", "AKR": "Ondo", "OND": "Ondo", "OWO": "Ondo", "KAA": "Ondo", "REE": "Ondo", "FFN": "Ondo", "SUA": "Ondo",
-    # 30. OSUN
-    "AAW": "Osun", "BDS": "Osun", "BKN": "Osun", "DTN": "Osun", "PMD": "Osun", "OSG": "Osun", "LES": "Osun", "EDE": "Osun", "GBN": "Osun", "FEE": "Osun", "SGB": "Osun",
-    # 31. OYO
-    "AGG": "Oyo", "AJW": "Oyo", "BDJ": "Oyo", "DDA": "Oyo", "IBA": "Oyo", "IBZ": "Oyo", "NRK": "Oyo", "YEM": "Oyo", "MAP": "Oyo", "AGD": "Oyo", "LUY": "Oyo", "AYE": "Oyo", "GNN": "Oyo",
-    # 32. PLATEAU
-    "BLD": "Plateau", "DMA": "Plateau", "DNG": "Plateau", "PBB": "Plateau", "PKN": "Plateau", "PTT": "Plateau", "JOS": "Plateau", "BUK": "Plateau", "QAN": "Plateau", "LAN": "Plateau", "BKK": "Plateau",
-    # 33. RIVERS
-    "ABM": "Rivers", "ABU": "Rivers", "AFM": "Rivers", "AHD": "Rivers", "DBU": "Rivers", "PHC": "Rivers", "AHO": "Rivers", "BGM": "Rivers", "BNY": "Rivers", "DEG": "Rivers", "ELE": "Rivers", "KNM": "Rivers", "OBK": "Rivers", "RUM": "Rivers", "NCH": "Rivers", "GOK": "Rivers", "BRR": "Rivers",
-    # 34. SOKOTO
-    "BDN": "Sokoto", "BUG": "Sokoto", "DGS": "Sokoto", "SOK": "Sokoto", "GWD": "Sokoto", "TBD": "Sokoto", "SRZ": "Sokoto", "YAB": "Sokoto", "KWE": "Sokoto",
-    # 35. TARABA
-    "BAL": "Taraba", "BBB": "Taraba", "DGA": "Taraba", "JAL": "Taraba", "MUT": "Taraba", "GKA": "Taraba", "WUK": "Taraba", "ZNG": "Taraba",
-    # 36. YOBE
-    "DPH": "Yobe", "DTR": "Yobe", "PKM": "Yobe", "BUN": "Yobe", "GUA": "Yobe", "NGR": "Yobe", "FKA": "Yobe", "MCK": "Yobe",
-    # 37. ZAMFARA
-    "GUS": "Zamfara", "KNR": "Zamfara", "MRD": "Zamfara", "ANR": "Zamfara", "TSF": "Zamfara", "ZRM": "Zamfara", "GWA": "Zamfara", "BKN": "Zamfara"
-}
-
-
-def identify_origin(ocr_text, plate_number):
-    text = ocr_text.upper().replace(" ", "").replace("-", "")
-    for keyword, capital in NIGERIA_STATES.items():
-        if keyword in text: return f"Nigeria: {keyword.title()} ({capital})"
-    
-    # Stricter Nigerian pattern check (e.g. ABC123DE)
-    nigeria_pattern = r'^[A-Z]{3}\d{3}[A-Z]{2}$'
-    if re.match(nigeria_pattern, plate_number): return "Nigeria (General)"
-    return "International"
-
-# --- 2. EXCEL STYLING ---
-def format_excel_report(file_path):
-    try:
-        wb = load_workbook(file_path)
-        ws = wb.active
-        header_fill = PatternFill(start_color="002060", end_color="002060", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
-        
-        for cell in ws[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center")
-            
-        for col in ws.columns:
-            max_length = 0
-            column_letter = col[0].column_letter
-            for cell in col:
-                if cell.value and len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            ws.column_dimensions[column_letter].width = max_length + 5
-        wb.save(file_path)
-    except Exception as e: 
-        print(f"Excel Error: {e}")
-
-# --- 3. INITIALIZATION & SAFETY CHECKS ---
 if not os.path.exists(VIDEO_PATH):
-    print(f"[ERROR] Video file '{VIDEO_PATH}' not found in the current folder.")
+    print(f"[ERROR] Video file '{VIDEO_PATH}' not found!")
     exit()
 
-print("Loading models... Please wait.")
-model = YOLO("best.pt") # Using your custom Nigerian model
+NIGERIA_STATES = {
+    "ABJ": "Abuja", "FCT": "Abuja", "ABUJA": "Abuja", "ABIA": "Abia", "ADAMAWA": "Adamawa", 
+    "AKWA": "Akwa Ibom", "IBOM": "Akwa Ibom", "ANAMBRA": "Anambra", "BAUCHI": "Bauchi", 
+    "BAYELSA": "Bayelsa", "BENUE": "Benue", "BORNO": "Borno", "CROSS": "Cross River", 
+    "DELTA": "Delta", "EBONYI": "Ebonyi", "EDO": "Edo", "EKITI": "Ekiti", "ENUGU": "Enugu", 
+    "GOMBE": "Gombe", "IMO": "Imo", "JIGAWA": "Jigawa", "KADUNA": "Kaduna", "KANO": "Kano", 
+    "KATSINA": "Katsina", "KEBBI": "Kebbi", "KOGI": "Kogi", "KWARA": "Kwara", "LAGOS": "Lagos", 
+    "CENTRE": "Lagos", "EXCELLENCE": "Lagos", "NASARAWA": "Nasarawa", "NIGER": "Niger", 
+    "OGUN": "Ogun", "ONDO": "Ondo", "OSUN": "Osun", "OYO": "Oyo", "PLATEAU": "Plateau", 
+    "RIVERS": "Rivers", "SOKOTO": "Sokoto", "TARABA": "Taraba", "YOBE": "Yobe", "ZAMFARA": "Zamfara"
+}
+
+# --- ULTIMATE 36-STATE LGA PREFIX MAP ---
+LGA_MAP = {
+    "ABA": "Abia", "BND": "Abia", "ACH": "Abia", "HAF": "Abia", "UMA": "Abia", "KPU": "Abia",
+    "DSA": "Adamawa", "FUR": "Adamawa", "GAN": "Adamawa", "GRE": "Adamawa", "GMB": "Adamawa", "GUY": "Adamawa", "HNG": "Adamawa", "JMT": "Adamawa", "MUB": "Adamawa", "NUM": "Adamawa", "YLA": "Adamawa",
+    "ABK": "Akwa Ibom", "KRT": "Akwa Ibom", "KET": "Akwa Ibom", "KST": "Akwa Ibom", "AFH": "Akwa Ibom", "AEE": "Akwa Ibom", "ETN": "Akwa Ibom", "UYO": "Akwa Ibom",
+    "AGU": "Anambra", "ABN": "Anambra", "ACA": "Anambra", "AJL": "Anambra", "HAL": "Anambra", "HTE": "Anambra", "AWK": "Anambra", "NNE": "Anambra", "ONN": "Anambra",
+    "BAU": "Bauchi", "BLR": "Bauchi", "BTA": "Bauchi", "DAS": "Bauchi", "DKU": "Bauchi", "DRZ": "Bauchi", "AKK": "Bauchi", "KAT": "Bauchi",
+    "YEN": "Bayelsa", "KMR": "Bayelsa", "KMK": "Bayelsa", "NEM": "Bayelsa", "GBB": "Bayelsa", "SAG": "Bayelsa", "SPR": "Bayelsa",
+    "BEN": "Benue", "PKG": "Benue", "GBK": "Benue", "MKD": "Benue", "OTU": "Benue",
+    "BAM": "Borno", "BBU": "Borno", "DAM": "Borno", "DKW": "Borno", "HWL": "Borno", "MAI": "Borno", "MUG": "Borno",
+    "DUK": "Cross River", "CAL": "Cross River", "IKM": "Cross River", "OBU": "Cross River", "UGE": "Cross River",
+    "ABH": "Delta", "AGB": "Delta", "BMA": "Delta", "BUR": "Delta", "DET": "Delta", "DNB": "Delta", "DSZ": "Delta", "ASB": "Delta", "WAR": "Delta", "UGH": "Delta", "SLG": "Delta",
+    "HKW": "Ebonyi", "AFK": "Ebonyi", "EZA": "Ebonyi", "OHZ": "Ebonyi",
+    "ABD": "Edo", "AFZ": "Edo", "AGD": "Edo", "AUB": "Edo", "IGU": "Edo", "UBJ": "Edo", "UCH": "Edo", "OKP": "Edo",
+    "ADK": "Ekiti", "EFY": "Ekiti", "EAA": "Ekiti", "GED": "Ekiti", "IER": "Ekiti", "KRE": "Ekiti", "MUE": "Ekiti", "TUN": "Ekiti", "YEK": "Ekiti",
+    "AGN": "Enugu", "AGW": "Enugu", "BBG": "Enugu", "ENU": "Enugu", "AWD": "Enugu", "UDI": "Enugu", "NSK": "Enugu",
+    "ABC": "Abuja", "ABJ": "Abuja", "BWR": "Abuja", "GWA": "Abuja", "KUJ": "Abuja", "KWL": "Abuja", "RBC": "Abuja", "RSH": "Abuja", "YAB": "Abuja",
+    "GME": "Gombe", "BKK": "Gombe", "KMG": "Gombe", "NFD": "Gombe", "DBS": "Gombe",
+    "WER": "Imo", "ORL": "Imo", "OKI": "Imo", "MGB": "Imo", "KGE": "Imo", "NKR": "Imo", "TTK": "Imo", "UMD": "Imo",
+    "BBR": "Jigawa", "BMW": "Jigawa", "DTU": "Jigawa", "HJA": "Jigawa", "KZR": "Jigawa", "GML": "Jigawa", "RNG": "Jigawa",
+    "KAD": "Kaduna", "DKA": "Kaduna", "MKA": "Kaduna", "ZAR": "Kaduna", "TRN": "Kaduna", "BNG": "Kaduna", "KAF": "Kaduna", "KCH": "Kaduna", "MGN": "Kaduna", "SAB": "Kaduna", "ZKW": "Kaduna",
+    "KAN": "Kano", "KMC": "Kano", "BKN": "Kano", "DBT": "Kano", "ABS": "Kano", "AJG": "Kano", "BBJ": "Kano", "BCH": "Kano", "DAL": "Kano", "DGW": "Kano", "DKD": "Kano", "DTA": "Kano", "DTF": "Kano", "WUD": "Kano",
+    "BAT": "Katsina", "BKR": "Katsina", "BDU": "Katsina", "BKY": "Katsina", "DRA": "Katsina", "DSM": "Katsina", "DNJ": "Katsina", "KTN": "Katsina", "FNT": "Katsina",
+    "BES": "Kebbi", "BGD": "Kebbi", "DKG": "Kebbi", "BRK": "Kebbi", "ARG": "Kebbi", "YUR": "Kebbi", "JEG": "Kebbi",
+    "BAS": "Kogi", "DAH": "Kogi", "DKN": "Kogi", "LKJ": "Kogi", "KBA": "Kogi", "ANC": "Kogi", "OKN": "Kogi", "AJK": "Kogi",
+    "AFN": "Kwara", "ILR": "Kwara", "MUN": "Kwara", "OFF": "Kwara", "KEY": "Kwara", "LFM": "Kwara",
+    "AAA": "Lagos", "AKD": "Lagos", "AGL": "Lagos", "APP": "Lagos", "BDG": "Lagos", "EKY": "Lagos", "EPE": "Lagos", "FKJ": "Lagos", "FST": "Lagos", "GGE": "Lagos", "JJJ": "Lagos", "KJA": "Lagos", "KRD": "Lagos", "KSF": "Lagos", "KTU": "Lagos", "LND": "Lagos", "LSD": "Lagos", "LSR": "Lagos", "MUS": "Lagos", "SMK": "Lagos",
+    "LFA": "Nasarawa", "KFF": "Nasarawa", "AKW": "Nasarawa", "WAM": "Nasarawa", "KEG": "Nasarawa",
+    "AGA": "Niger", "AGR": "Niger", "BDA": "Niger", "PAK": "Niger", "MNA": "Niger", "SUL": "Niger", "KNT": "Niger", "LAP": "Niger", "NAG": "Niger",
+    "AAB": "Ogun", "ABG": "Ogun", "DED": "Ogun", "DGB": "Ogun", "AKM": "Ogun", "SGM": "Ogun", "JBD": "Ogun", "TTN": "Ogun", "WDE": "Ogun", "TRE": "Ogun", "SMG": "Ogun",
+    "DEK": "Ondo", "AKR": "Ondo", "OND": "Ondo", "OWO": "Ondo", "KAA": "Ondo", "REE": "Ondo", "FFN": "Ondo", "SUA": "Ondo",
+    "AAW": "Osun", "BDS": "Osun", "DTN": "Osun", "PMD": "Osun", "OSG": "Osun", "LES": "Osun", "EDE": "Osun", "GBN": "Osun", "FEE": "Osun", "SGB": "Osun",
+    "AGG": "Oyo", "AJW": "Oyo", "BDJ": "Oyo", "DDA": "Oyo", "IBA": "Oyo", "IBZ": "Oyo", "NRK": "Oyo", "YEM": "Oyo", "MAP": "Oyo", "LUY": "Oyo", "AYE": "Oyo", "GNN": "Oyo",
+    "BLD": "Plateau", "DMA": "Plateau", "DNG": "Plateau", "PBB": "Plateau", "PKN": "Plateau", "PTT": "Plateau", "JOS": "Plateau", "BUK": "Plateau", "QAN": "Plateau", "LAN": "Plateau",
+    "ABM": "Rivers", "ABU": "Rivers", "AFM": "Rivers", "AHD": "Rivers", "DBU": "Rivers", "PHC": "Rivers", "AHO": "Rivers", "BGM": "Rivers", "BNY": "Rivers", "DEG": "Rivers", "ELE": "Rivers", "KNM": "Rivers", "OBK": "Rivers", "RUM": "Rivers", "NCH": "Rivers", "GOK": "Rivers", "BRR": "Rivers",
+    "BDN": "Sokoto", "BUG": "Sokoto", "DGS": "Sokoto", "SOK": "Sokoto", "GWD": "Sokoto", "TBD": "Sokoto", "SRZ": "Sokoto", "KWE": "Sokoto",
+    "BAL": "Taraba", "BBB": "Taraba", "DGA": "Taraba", "JAL": "Taraba", "MUT": "Taraba", "GKA": "Taraba", "WUK": "Taraba", "ZNG": "Taraba",
+    "DPH": "Yobe", "DTR": "Yobe", "PKM": "Yobe", "BUN": "Yobe", "GUA": "Yobe", "NGR": "Yobe", "FKA": "Yobe", "MCK": "Yobe",
+    "GUS": "Zamfara", "KNR": "Zamfara", "MRD": "Zamfara", "ANR": "Zamfara", "TSF": "Zamfara", "ZRM": "Zamfara"
+}
+
+# --- 2. EXCEL SETUP ---
+print("Setting up Video Excel Log File...")
+if not os.path.exists(LOG_FILE):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Timestamp", "Plate_Number", "State_of_Origin", "Country", "Confidence"])
+    wb.save(LOG_FILE)
+
+try:
+    wb = load_workbook(LOG_FILE)
+    ws = wb.active
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+    ws.row_dimensions[1].height = 22
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for col in ['A', 'B', 'C', 'D', 'E']:
+        ws.column_dimensions[col].width = 20
+    wb.save(LOG_FILE)
+except PermissionError:
+    print(f"[ERROR] Please close {LOG_FILE} before running the script!")
+    exit()
+
+# --- 3. CORE LOGIC ---
+def identify_origin_from_text(ocr_text):
+    text = ocr_text.upper().replace(" ", "").replace("-", "")
+    for keyword, state in NIGERIA_STATES.items():
+        if keyword in text: return state
+    matches = difflib.get_close_matches(text, list(NIGERIA_STATES.keys()), n=1, cutoff=0.8)
+    if matches: return NIGERIA_STATES[matches[0]]
+    return "Unknown"
+
+def clean_and_format_plate(raw_text):
+    clean = re.sub(r'[^A-Z0-9]', '', raw_text.upper())
+    if len(clean) == 8:
+        chars = list(clean)
+        def fix_num(c): return {'O': '0', 'I': '1', 'S': '5', 'B': '8', 'Z': '2', 'A': '4', 'G': '6'}.get(c, c)
+        def fix_let(c): return {'0': 'O', '1': 'I', '5': 'S', '8': 'B', '4': 'A', '6': 'G'}.get(c, c)
+        chars[0], chars[1], chars[2] = fix_let(chars[0]), fix_let(chars[1]), fix_let(chars[2])
+        chars[3], chars[4], chars[5] = fix_num(chars[3]), fix_num(chars[4]), fix_num(chars[5])
+        chars[6], chars[7] = fix_let(chars[6]), fix_let(chars[7])
+        return f"{''.join(chars[:3])}-{''.join(chars[3:6])}-{''.join(chars[6:])}"
+    if len(clean) >= 5 and any(c.isdigit() for c in clean): return clean
+    return None
+
+# --- 4. EXECUTION ---
+print("Initializing Camera and Models... Please wait.")
+model = YOLO("best.pt").to(DEVICE)
 reader = easyocr.Reader(['en'], gpu=False)
 
 cap = cv2.VideoCapture(VIDEO_PATH)
-seen_plates = set()
+seen_plates = {}
+frame_count = 0
 
-# Window Setup
 target_w, target_h = 854, 480
 WINDOW_NAME = "Nigerian ALPR Video Analysis"
 cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
 cv2.resizeWindow(WINDOW_NAME, target_w, target_h)
 
-# Initialize Excel
-headers = ["Time_Stamp", "Model", "Origin_Capital", "Plate_Number", "Confidence"]
-if not os.path.exists(LOG_FILE):
-    pd.DataFrame(columns=headers).to_excel(LOG_FILE, index=False)
-    format_excel_report(LOG_FILE)
-
-print(f"Starting analysis on {VIDEO_PATH}...")
-
-# --- 4. MAIN LOOP ---
 while cap.isOpened():
     ret, frame = cap.read()
-    if not ret: 
-        print("End of video stream reached.")
-        break
+    if not ret: break
 
-    # Run Detection
-    results = model(frame, conf=0.20, verbose=False)
-    
+    frame_count += 1
+    if frame_count % 3 != 0:
+        display_frame = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_AREA)
+        cv2.imshow(WINDOW_NAME, display_frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'): break
+        continue
+
+    results = model(frame, conf=0.15, verbose=False, device=DEVICE)
+
     for result in results:
         for box in result.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            
-            # Pad the crop to ensure EasyOCR sees the whole plate
             pad = 15
-            y1_p = max(0, y1 - pad)
-            y2_p = min(frame.shape[0], y2 + pad)
-            x1_p = max(0, x1 - pad)
-            x2_p = min(frame.shape[1], x2 + pad)
-            
-            plate_crop = frame[y1_p:y2_p, x1_p:x2_p]
+            y1_p, y2_p = max(0, y1 - pad), min(frame.shape[0], y2 + pad)
+            x1_p, x2_p = max(0, x1 - pad), min(frame.shape[1], x2 + pad)
+            crop = frame[y1_p:y2_p, x1_p:x2_p]
 
-            if plate_crop.size > 0:
-                # --- NEW: Image Upscaling & CLAHE Contrast for Video Frames ---
-                # 1. Upscale the cropped plate 2.5x
-                plate_res = cv2.resize(plate_crop, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-                
-                # 2. Grayscale & Contrast Enhancement (CLAHE)
-                gray = cv2.cvtColor(plate_res, cv2.COLOR_BGR2GRAY)
+            if crop.size > 0:
+                crop_res = cv2.resize(crop, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+                gray = cv2.cvtColor(crop_res, cv2.COLOR_BGR2GRAY)
                 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
                 contrast = clahe.apply(gray)
 
-                # 3. Read text from the enhanced image
-                ocr_res = reader.readtext(contrast)
+                # ZONED OCR
+                h, w = contrast.shape
+                state_zone_img = contrast[0:int(h * 0.35), 0:w]
 
-                for (_, text, prob) in ocr_res:
-                    clean_num = re.sub(r'[^A-Z0-9]', '', text.upper())
+                state_ocr_results = reader.readtext(state_zone_img)
+                full_ocr_results = reader.readtext(contrast)
+                
+                detected_state = "Unknown"
+                best_plate = None
+                best_prob = 0
+                
+                # TIER 1
+                for (_, text, prob) in state_ocr_results:
+                    state_check = identify_origin_from_text(text)
+                    if state_check != "Unknown": 
+                        detected_state = state_check
+                        break
+                        
+                for (_, text, prob) in full_ocr_results:
+                    formatted_num = clean_and_format_plate(text)
+                    if formatted_num and prob > best_prob:
+                        best_plate = formatted_num
+                        best_prob = prob
+                
+                # TIER 2: Fallback to LGA Prefix Map
+                if detected_state == "Unknown" and best_plate:
+                    prefix = best_plate[:3]
+                    if prefix in LGA_MAP: detected_state = LGA_MAP[prefix]
+                
+                # FILTER & LOG
+                if best_plate and best_prob > 0.25:
+                    current_time = datetime.now()
+                    allow_logging = False
                     
-                    # Logic: Must be at least 5 chars, unseen, and prob > 0.25 (to account for video blur)
-                    if len(clean_num) >= 5 and clean_num not in seen_plates and prob > 0.25:
-                        origin = identify_origin(text, clean_num)
-                        
-                        # Logging
-                        new_data = pd.DataFrame([{
-                            "Time_Stamp": datetime.now().strftime("%H:%M:%S"), 
-                            "Model": "best.pt (Nigerian)", 
-                            "Origin_Capital": origin, 
-                            "Plate_Number": clean_num, 
-                            "Confidence": round(prob, 2)
-                        }])
-                        
-                        with pd.ExcelWriter(LOG_FILE, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
-                            new_data.to_excel(writer, index=False, header=False, startrow=writer.sheets['Sheet1'].max_row)
-                        
-                        format_excel_report(LOG_FILE)
-                        seen_plates.add(clean_num)
-                        print(f"[DETECTED & LOGGED] {clean_num} - Confidence: {round(prob, 2)} - {origin}")
+                    if best_plate not in seen_plates:
+                        allow_logging = True
+                    else:
+                        if (current_time - seen_plates[best_plate]).total_seconds() > COOLDOWN_SECONDS:
+                            allow_logging = True
 
-            # Draw visual box on the frame
+                    if allow_logging:
+                        print(f"[DETECTED] {best_plate} | State: {detected_state}")
+                        try:
+                            wb = load_workbook(LOG_FILE)
+                            ws = wb.active
+                            ws.append([current_time.strftime("%Y-%m-%d %H:%M:%S"), best_plate, detected_state, "Nigeria", round(best_prob, 2)])
+                            
+                            last_row = ws.max_row
+                            green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                            for col_idx in range(1, 6): ws.cell(row=last_row, column=col_idx).fill = green_fill
+                                
+                            wb.save(LOG_FILE)
+                            seen_plates[best_plate] = current_time
+                        except PermissionError: pass
+            
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(frame, "Plate Detected", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(frame, "Detecting...", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-    # Display video
     display_frame = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_AREA)
     cv2.imshow(WINDOW_NAME, display_frame)
-    
-    # Press 'q' to quit early
-    if cv2.waitKey(1) & 0xFF == ord('q'): 
-        break
+    if cv2.waitKey(1) & 0xFF == ord('q'): break
 
 cap.release()
 cv2.destroyAllWindows()
-print(f"Analysis complete. Logs saved to {LOG_FILE}.")
+
+print(f"Analysis complete. Opening {LOG_FILE}...")
+try: os.startfile(LOG_FILE)
+except Exception: pass
