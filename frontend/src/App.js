@@ -16,8 +16,8 @@ function App() {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [toast, setToast] = useState(null);
-  const [darkMode, setDarkMode] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [darkMode, setDarkMode] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [processingCount, setProcessingCount] = useState(0);
 
@@ -214,7 +214,7 @@ function App() {
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
         <div className="sidebar-header">
           <div className="logo">
-            <Car size={28} />
+            <img src={require('./imageCapture.jpeg')} alt="AVLPRDL" style={{ width: 32, height: 32, borderRadius: 8 }} />
             <span>AVLPRDL System</span>
           </div>
         </div>
@@ -537,7 +537,6 @@ function App() {
             </div>
             <div className="about-content">
               <div className="about-hero">
-                <Car size={30} />
                 <h3>AVLPRDL System</h3>
               </div>
               

@@ -1028,20 +1028,23 @@ body:has(.sidebar.collapsed) .sidebar-expand {
   text-align: center;
   padding: 2rem 1rem;
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0.05));
+  background-image: url(imageCapture.jpeg);
+  background-size: cover;
+  background-position: center;
   border-radius: var(--radius-md);
   margin-bottom: 1.5rem;
-}
-
-.about-hero svg {
-  color: var(--primary);
-  margin-bottom: 1rem;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .about-hero h3 {
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 900;
   color: var(--text-primary);
-  margin-bottom: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .about-details {
@@ -1049,6 +1052,7 @@ body:has(.sidebar.collapsed) .sidebar-expand {
   flex-direction: column;
   gap: 1rem;
   margin-bottom: 1.5rem;
+  text-align: center;
 }
 
 .about-item {
@@ -1103,36 +1107,15 @@ body:has(.sidebar.collapsed) .sidebar-expand {
 /* Tablet - iPad Landscape */
 @media (min-width: 768px) and (max-width: 1024px) {
   :root {
-    --sidebar-width: 220px;
-    --sidebar-collapsed: 60px;
+    --sidebar-width: 260px;
   }
   
   .sidebar {
-    width: var(--sidebar-collapsed);
-  }
-  
-  .sidebar .logo span,
-  .sidebar .nav-item span,
-  .sidebar .theme-toggle span {
-    display: none;
-  }
-  
-  .sidebar .logo {
-    justify-content: center;
-  }
-  
-  .sidebar .nav-item {
-    justify-content: center;
-    padding: 0.75rem;
-  }
-  
-  .sidebar .theme-toggle {
-    justify-content: center;
-    padding: 0.75rem;
+    width: var(--sidebar-width);
   }
   
   .main-content {
-    margin-left: var(--sidebar-collapsed);
+    margin-left: var(--sidebar-width);
     padding: 1.5rem;
   }
   
