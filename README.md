@@ -1,11 +1,11 @@
-# AVLPRD - Automatic Vehicle License Plate Recognition Dashboard
+# AVLPRDL - Automatic Vehicle License Plate Recognition Dashboard
 
 A full-stack web application for automatic vehicle license plate recognition using React.js frontend and Flask backend.
 
 ## Project Structure
 
 ```
-AVLPRD/
+AVLPRDL/
 ├── frontend/           # React.js frontend application
 ├── backend/            # Flask backend API
 │   ├── app.py         # Main Flask application
@@ -70,7 +70,7 @@ AVLPRD/
 
 3. You should see output similar to:
    ```
-   Starting AVLPRD Backend Server...
+   Starting AVLPRDL Backend Server...
    Models loaded successfully
    Server running at http://localhost:5000
    ```
