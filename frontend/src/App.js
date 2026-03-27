@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
-import { Camera, Video, Activity, FileText, Play, Upload, X, CheckCircle, AlertCircle, Info, Moon, Sun, Car, Download, RotateCcw } from 'lucide-react';
+import { Camera, Video, Activity, FileText, Play, Upload, X, CheckCircle, AlertCircle, Info, Moon, Sun, Car, Download, RotateCcw, Menu } from 'lucide-react';
 
 const API_BASE_URL = 'http://127.0.0.1:5000';
 
@@ -194,6 +194,21 @@ function App() {
           </button>
         </div>
       )}
+
+      {/* Mobile Menu Button */}
+      <button 
+        className={`mobile-menu-btn ${sidebarOpen ? 'hidden' : ''}`}
+        onClick={() => setSidebarOpen(true)}
+        aria-label="Open menu"
+      >
+        <Menu size={24} />
+      </button>
+
+      {/* Sidebar Overlay */}
+      <div 
+        className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
 
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
