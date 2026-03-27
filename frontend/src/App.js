@@ -419,8 +419,7 @@ function App() {
             <span>Uwagboi Andrew Chukwuyem </span>
           </div>
           <div className="footer-right">
-            <span>myFinalYearProject</span>
-            <span>©2026</span>
+            <span>myFinalYearProject©2026</span>
           </div>
         </footer>
       </main>
@@ -538,7 +537,7 @@ function App() {
             </div>
             <div className="about-content">
               <div className="about-hero">
-                <Camera size={60} />
+                <Car size={30} />
                 <h3>AVLPRDL System</h3>
               </div>
               
