@@ -15,7 +15,18 @@ from openpyxl.styles import PatternFill
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+
+# Enable CORS for /api/* routes with explicit configuration for preflight (OPTIONS) support
+# This configuration allows cross-origin requests from any origin
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",  # Allow all origins
+        "methods": ["GET", "POST", "OPTIONS"],  # Explicitly allow OPTIONS for preflight
+        "allow_headers": ["Content-Type"],  # Allow Content-Type header
+        "expose_headers": ["Content-Type"],  # Expose Content-Type in response
+        "supports_credentials": False
+    }
+})
 
 # --- CONFIGURATION ---
 DEVICE = 'cpu'
@@ -366,39 +377,84 @@ def test():
 
 @app.route('/api/process-image', methods=['POST'])
 def process_image():
-    """Process uploaded image for license plate recognition"""
+    """
+    Process uploaded image(s) for license plate recognition.
+    Accepts multiple files via the 'images' key in FormData.
+    Returns a JSON array with results for each processed image.
+    """
     try:
-        # Check if file was uploaded
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file uploaded'}), 400
+        # Get all uploaded files using 'images' key (matches frontend)
+        files = request.files.getlist('images')
         
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
+        # Return 400 if no files were uploaded
+        if not files or len(files) == 0:
+            return jsonify({'error': 'No files uploaded', 'results': []}), 400
         
-        # Validate file type
-        if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
-            return jsonify({'error': 'Invalid file type. Please upload an image file'}), 400
+        # Filter out empty filenames
+        valid_files = [f for f in files if f.filename and f.filename.strip() != '']
         
-        # Save uploaded file temporarily
+        if len(valid_files) == 0:
+            return jsonify({'error': 'No valid files selected', 'results': []}), 400
+        
+        # Allowed image extensions
+        allowed_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp')
+        
+        # Validate all files before processing
+        for file in valid_files:
+            if not file.filename.lower().endswith(allowed_extensions):
+                return jsonify({
+                    'error': f'Invalid file type for {file.filename}. Please upload image files only',
+                    'results': []
+                }), 400
+        
+        # Setup upload directory
         upload_dir = 'uploads'
         os.makedirs(upload_dir, exist_ok=True)
-        file_path = os.path.join(upload_dir, file.filename)
-        file.save(file_path)
         
-        # Process the image
-        result = process_image_file(file_path, file.filename)
+        # List to store temporary file paths for cleanup
+        temp_files = []
+        results = []
         
-        # Clean up temporary file
         try:
-            os.remove(file_path)
-        except:
-            pass
-        
-        return jsonify(result)
-        
+            # Process each uploaded image file
+            for file in valid_files:
+                # Create unique filename to avoid conflicts
+                import uuid
+                unique_filename = f"{uuid.uuid4().hex}_{file.filename}"
+                file_path = os.path.join(upload_dir, unique_filename)
+                temp_files.append(file_path)
+                
+                # Save file temporarily
+                file.save(file_path)
+                
+                # Process the image and collect result
+                result = process_image_file(file_path, file.filename)
+                results.append(result)
+            
+            # Return all results as a JSON array
+            return jsonify({
+                'status': 'success',
+                'total_files': len(valid_files),
+                'processed_count': sum(1 for r in results if r.get('status') == 'processed'),
+                'not_found_count': sum(1 for r in results if r.get('status') == 'no_plate_found'),
+                'results': results
+            }), 200
+            
+        finally:
+            # Clean up ALL temporary files after processing (even if errors occur)
+            for file_path in temp_files:
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                except Exception as cleanup_error:
+                    print(f"Warning: Could not delete temp file {file_path}: {cleanup_error}")
+    
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # Return 500 for any unexpected server errors
+        return jsonify({
+            'error': f'Server error processing images: {str(e)}',
+            'results': []
+        }), 500
 
 @app.route('/api/process-video', methods=['POST'])
 def process_video():
@@ -498,6 +554,122 @@ def export_analytics():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ==================== LIVE MONITORING ENDPOINT ====================
+# This endpoint provides real-time detection data for the live monitoring feature
+# It polls the latest detections and returns them in a format the frontend can display
+
+live_detection_buffer = []  # In-memory buffer for recent live detections
+MAX_BUFFER_SIZE = 50  # Keep last 50 detections
+
+@app.route('/api/live-data')
+def live_data():
+    """
+    Returns live detection data for real-time monitoring.
+    This endpoint is polled by the frontend at regular intervals.
+    
+    Returns:
+        - total: Total number of detections ever recorded
+        - recent: Array of recent detections (from Excel log)
+        - live_detections: Array of newly added detections (in-memory buffer)
+        - timestamp: Server timestamp for sync
+    """
+    try:
+        # Initialize response data
+        response_data = {
+            'status': 'success',
+            'total': 0,
+            'recent': [],
+            'live_detections': live_detection_buffer.copy(),  # Return copy of buffer
+            'timestamp': datetime.now().isoformat(),
+            'message': 'Live data endpoint working'
+        }
+        
+        # Read data from Excel log if it exists
+        if os.path.exists(LOG_FILE):
+            try:
+                import pandas as pd
+                df = pd.read_excel(LOG_FILE)
+                response_data['total'] = len(df)
+                # Return last 20 detections as "recent"
+                response_data['recent'] = df.tail(20).to_dict(orient='records')
+            except Exception as excel_error:
+                print(f"Error reading Excel file: {excel_error}")
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Error in live_data endpoint: {e}")  # Log server-side error
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'total': 0,
+            'recent': [],
+            'live_detections': [],
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/live-data/add', methods=['POST'])
+def add_live_detection():
+    """
+    Add a detection to the live monitoring buffer.
+    Called internally when a plate is detected during live processing.
+    
+    Expects JSON body with: plate_number, state_of_origin, confidence, filename
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Create detection record
+        detection = {
+            'plate_number': data.get('plate_number', 'UNKNOWN'),
+            'state_of_origin': data.get('state_of_origin', 'Unknown'),
+            'confidence': data.get('confidence', 0),
+            'filename': data.get('filename', 'live'),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Add to buffer (at the beginning for most recent first)
+        live_detection_buffer.insert(0, detection)
+        
+        # Trim buffer to max size
+        while len(live_detection_buffer) > MAX_BUFFER_SIZE:
+            live_detection_buffer.pop()
+        
+        return jsonify({
+            'status': 'success',
+            'detection': detection,
+            'buffer_size': len(live_detection_buffer)
+        })
+        
+    except Exception as e:
+        print(f"Error adding live detection: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/connection-test')
+def connection_test():
+    """
+    Simple endpoint to test frontend-backend connectivity.
+    Returns basic info about the server state.
+    """
+    return jsonify({
+        'status': 'success',
+        'message': 'Backend connection successful',
+        'server_time': datetime.now().isoformat(),
+        'models_loaded': model is not None and reader is not None,
+        'endpoints': {
+            'test': '/api/test',
+            'dashboard': '/api/dashboard',
+            'process_image': '/api/process-image',
+            'process_video': '/api/process-video',
+            'live_data': '/api/live-data',
+            'export_analytics': '/api/export-analytics',
+            'connection_test': '/api/connection-test'
+        }
+    })
 
 if __name__ == '__main__':
     # Setup directories and Excel file
